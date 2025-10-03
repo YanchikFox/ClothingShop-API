@@ -1,4 +1,5 @@
-# ClothingShop API
+# ClothingShop API  ![Node CI](https://github.com/YanchikFox/ClothingShop-API/actions/workflows/node-ci.yml/badge.svg)
+
 
 A Node.js + Express backend that powers the ClothingShop mobile application. It exposes REST endpoints for browsing products, managing user accounts, and keeping track of cart contents in a PostgreSQL database.
 
