@@ -186,19 +186,20 @@ app.post('/api/login', async (req, res, next) => {
  * GET /api/cart - Retrieve current user's cart items
  * Requires authentication token in x-auth-token header
  */
-app.get('/api/cart', authMiddleware, async (req, res, next) => {
+app.get('/api/cart', authMiddleware, async (req, res) => {
     try {
         // Query cart items with product details for the authenticated user
         const cartItems = await pool.query(
             `SELECT p.*, ci.quantity FROM cart_items ci
              JOIN products p ON ci.product_id = p.id
-             JOIN carts c ON ci.cart_id = c.id
+             JOIN carts c ON ci.cart_id = c.id 
              WHERE c.user_id = $1`,
             [req.user.id]
         );
         res.json(cartItems.rows);
     } catch (err) {
-        next(createError('GET_CART_FAILED', 500, 'Unable to retrieve cart items', err));
+        console.error(err.message);
+        res.status(500).send("Server Error");
     }
 });
 
@@ -209,13 +210,13 @@ app.get('/api/cart', authMiddleware, async (req, res, next) => {
  *   - productId: ID of the product to add (required)
  *   - quantity: Quantity to add (required)
  */
-app.post('/api/cart', authMiddleware, async (req, res, next) => {
-    const validation = cartItemBodySchema.safeParse(req.body);
-    if (!validation.success) {
-        return res.status(400).json(validationErrorResponse(validation.error));
+app.post('/api/cart', authMiddleware, async (req, res) => {
+    const validationResult = cartItemBodySchema.safeParse(req.body);
+    if (!validationResult.success) {
+        return res.status(400).json(validationErrorResponse(validationResult.error));
     }
 
-    const { productId, quantity } = validation.data;
+    const { productId, quantity } = validationResult.data;
     try {
         // Get or create user's cart
         let cart = await pool.query("SELECT * FROM carts WHERE user_id = $1", [req.user.id]);
@@ -233,7 +234,8 @@ app.post('/api/cart', authMiddleware, async (req, res, next) => {
         const newItem = await pool.query(query, [cartId, productId, quantity]);
         res.status(201).json(newItem.rows[0]);
     } catch (err) {
-        next(createError('UPSERT_CART_ITEM_FAILED', 500, 'Unable to update cart item', err));
+        console.error(err.message);
+        res.status(500).send("Server Error");
     }
 });
 
