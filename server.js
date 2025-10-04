@@ -5,7 +5,12 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const authMiddleware = require('./authMiddleware');
-
+const {
+    cartItemBodySchema,
+    cartItemParamsSchema,
+    cartQuantitySchema,
+    formatZodError,
+} = require('./schemas/cartSchemas');
 const app = express();
 app.use(express.json());
 
@@ -38,6 +43,11 @@ if (DB_SSL === 'true') {
 }
 
 const pool = new Pool(poolConfig);
+
+const validationErrorResponse = (error) => ({
+    error: 'ValidationError',
+    details: formatZodError(error),
+});
 
 /**
  * GET /api/products - Retrieve products with optional gender filtering
@@ -150,6 +160,12 @@ app.post('/api/login', async (req, res) => {
  * Requires authentication token in x-auth-token header
  */
 app.get('/api/cart', authMiddleware, async (req, res) => {
+        const validationResult = cartItemBodySchema.safeParse(req.body);
+    if (!validationResult.success) {
+        return res.status(400).json(validationErrorResponse(validationResult.error));
+    }
+
+    const { productId, quantity } = validationResult.data;
     try {
         // Query cart items with product details for the authenticated user
         const cartItems = await pool.query(
@@ -206,8 +222,18 @@ app.post('/api/cart', authMiddleware, async (req, res) => {
  *   - quantity: New quantity value (required)
  */
 app.put('/api/cart/item/:productId', authMiddleware, async (req, res) => {
-    const { productId } = req.params;
-    const { quantity } = req.body;
+    const paramsValidation = cartItemParamsSchema.safeParse(req.params);
+    if (!paramsValidation.success) {
+        return res.status(400).json(validationErrorResponse(paramsValidation.error));
+    }
+
+    const bodyValidation = cartQuantitySchema.safeParse(req.body);
+    if (!bodyValidation.success) {
+        return res.status(400).json(validationErrorResponse(bodyValidation.error));
+    }
+
+    const { productId } = paramsValidation.data;
+    const { quantity } = bodyValidation.data;
     
     try {
         // Find user's cart
@@ -329,6 +355,10 @@ app.get('/api/search', async (req, res) => {
 // Start the Express server
 
 const port = Number(PORT) || 3000;
-app.listen(port, () => {
-    console.log(`🚀 Server started on port ${port}`);
-});
+if (require.main === module) {
+    app.listen(port, () => {
+        console.log(`🚀 Server started on port ${port}`);
+    });
+}
+
+module.exports = { app, pool };
