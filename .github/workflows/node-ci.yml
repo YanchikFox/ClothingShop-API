@@ -30,6 +30,8 @@ jobs:
       DB_PASSWORD: mypassword
       DB_NAME: mydatabase
       JWT_SECRET: test-secret
+      NODE_OPTIONS: --experimental-vm-modules
+      CI: "true"
 
     steps:
       - name: Checkout
@@ -54,9 +56,6 @@ jobs:
           done
           echo "Postgres did not become ready in time" >&2
           exit 1
-
-      - name: Show Node version
-        run: node -v
 
       - name: Seed DB
         run: node setup-database.js
