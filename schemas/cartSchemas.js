@@ -2,7 +2,10 @@ const { z } = require('zod');
 
 const cartItemBodySchema = z
     .object({
-        productId: z.string({ required_error: 'productId is required' }).uuid('productId must be a valid UUID'),
+        productId: z
+            .string({ required_error: 'productId is required' })
+            .trim()
+            .min(1, 'productId must be a non-empty string'),
         quantity: z
             .coerce.number({ required_error: 'quantity is required' })
             .int('quantity must be an integer')
@@ -11,7 +14,10 @@ const cartItemBodySchema = z
     .strict();
 
 const cartItemParamsSchema = z.object({
-    productId: z.string({ required_error: 'productId is required' }).uuid('productId must be a valid UUID'),
+    productId: z
+        .string({ required_error: 'productId is required' })
+        .trim()
+        .min(1, 'productId must be a non-empty string'),
 });
 
 const cartQuantitySchema = z

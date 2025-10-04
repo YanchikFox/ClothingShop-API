@@ -32,14 +32,14 @@ beforeEach(() => {
 });
 
 describe('Cart route validation', () => {
-    const validProductId = '123e4567-e89b-12d3-a456-426614174000';
+    const validProductId = 'su001';
 
     test('POST /api/cart rejects invalid productId', async () => {
         const pool = getPoolInstance();
 
         const response = await request(app)
             .post('/api/cart')
-            .send({ productId: 'not-a-uuid', quantity: 2 });
+            .send({ productId: '', quantity: 2 });
 
         expect(response.status).toBe(400);
         expect(response.body).toEqual({
@@ -78,7 +78,7 @@ describe('Cart route validation', () => {
         const pool = getPoolInstance();
 
         const response = await request(app)
-            .put('/api/cart/item/not-a-uuid')
+            .put('/api/cart/item/%20%20%20')
             .send({ quantity: 3 });
 
         expect(response.status).toBe(400);
