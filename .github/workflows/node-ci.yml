@@ -6,6 +6,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: myuser
+          POSTGRES_PASSWORD: mypassword
+          POSTGRES_DB: mydatabase
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U myuser"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -17,5 +33,19 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      - name: Run tests (if present)
-        run: npm test --if-present
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h localhost -p 5432 -U myuser; then
+              break
+            fi
+            sleep 1
+          done
+        env:
+          PGPASSWORD: mypassword
+
+      - name: Seed DB
+        run: node setup-database.js
+
+      - name: Run tests
+        run: npx jest --runInBand
