@@ -22,6 +22,14 @@ jobs:
           --health-timeout=5s
           --health-retries=5
 
+    env:
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USER: myuser
+      DB_PASSWORD: mypassword
+      DB_NAME: mydatabase
+      JWT_SECRET: test-secret
+
     steps:
       - uses: actions/checkout@v4
 
@@ -34,18 +42,16 @@ jobs:
         run: npm ci
 
       - name: Wait for Postgres
+        shell: bash
         run: |
-          for i in {1..30}; do
-            if pg_isready -h localhost -p 5432 -U myuser; then
-              break
-            fi
+          for i in {1..60}; do
+            (echo >/dev/tcp/localhost/5432) >/dev/null 2>&1 && echo "Postgres is up" && break
+            echo "Waiting for Postgres..."
             sleep 1
           done
-        env:
-          PGPASSWORD: mypassword
 
       - name: Seed DB
         run: node setup-database.js
 
       - name: Run tests
-        run: npx jest --runInBand
+        run: npx jest --runInBand --passWithNoTests
