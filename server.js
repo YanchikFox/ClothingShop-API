@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
@@ -7,14 +9,35 @@ const authMiddleware = require('./authMiddleware');
 const app = express();
 app.use(express.json());
 
-// Configure PostgreSQL database connection pool
-const pool = new Pool({
-    user: 'myuser',
-    host: 'localhost',
-    database: 'mydatabase',
-    password: 'mypassword',
-    port: 5432,
-});
+const {
+    PORT = 3000,
+    DATABASE_URL,
+    DB_HOST = 'localhost',
+    DB_PORT = '5432',
+    DB_USER = 'myuser',
+    DB_PASSWORD = 'mypassword',
+    DB_NAME = 'mydatabase',
+    JWT_SECRET = 'dev-secret-change-me',
+    DB_SSL = 'false',
+} = process.env;
+
+
+// Configure PostgreSQL database connection pool using environment variables
+const poolConfig = DATABASE_URL
+    ? { connectionString: DATABASE_URL }
+    : {
+          host: DB_HOST,
+          port: Number(DB_PORT),
+          user: DB_USER,
+          password: DB_PASSWORD,
+          database: DB_NAME,
+      };
+
+if (DB_SSL === 'true') {
+    poolConfig.ssl = { rejectUnauthorized: false };
+}
+
+const pool = new Pool(poolConfig);
 
 /**
  * GET /api/products - Retrieve products with optional gender filtering
@@ -112,7 +135,7 @@ app.post('/api/login', async (req, res) => {
 
         // Generate JWT token
         const payload = { user: { id: user.rows[0].id } };
-        const token = jwt.sign(payload, "yourSecretKey", { expiresIn: '1h' });
+        const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
 
         res.json({ token });
 
@@ -305,7 +328,7 @@ app.get('/api/search', async (req, res) => {
 
 // Start the Express server
 
-const port = 3000;
+const port = Number(PORT) || 3000;
 app.listen(port, () => {
     console.log(`🚀 Server started on port ${port}`);
 });

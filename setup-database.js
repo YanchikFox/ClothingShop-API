@@ -1,15 +1,34 @@
+require('dotenv').config();
+
 const { Pool } = require('pg');
+const {
+    DATABASE_URL,
+    DB_HOST = 'localhost',
+    DB_PORT = '5432',
+    DB_USER = 'myuser',
+    DB_PASSWORD = 'mypassword',
+    DB_NAME = 'mydatabase',
+    DB_SSL = 'false',
+} = process.env;
 
 console.log("▶️ Database setup script started...");
 
-// Configure PostgreSQL connection
-const pool = new Pool({
-    user: 'myuser',
-    host: '127.0.0.1',
-    database: 'mydatabase',
-    password: 'mypassword',
-    port: 5432,
-});
+// Configure PostgreSQL connection using environment variables
+const poolConfig = DATABASE_URL
+    ? { connectionString: DATABASE_URL }
+    : {
+          host: DB_HOST,
+          port: Number(DB_PORT),
+          user: DB_USER,
+          password: DB_PASSWORD,
+          database: DB_NAME,
+      };
+
+if (DB_SSL === 'true') {
+    poolConfig.ssl = { rejectUnauthorized: false };
+}
+
+const pool = new Pool(poolConfig);
 
 /**
  * Complete database schema setup with sample data

@@ -31,7 +31,15 @@ A Node.js + Express backend that powers the ClothingShop mobile application. It 
    npm install
    ```
 
-2. **Start PostgreSQL**
+2. **Configure environment variables**
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Update `.env` with the connection details for your PostgreSQL instance and choose a strong `JWT_SECRET` for token signing.
+
+3. **Start PostgreSQL**
 
    - Quick start (recommended):
 
@@ -39,11 +47,11 @@ A Node.js + Express backend that powers the ClothingShop mobile application. It 
      docker compose up -d
      ```
 
-     This launches a local PostgreSQL 16 container with the credentials that are already referenced in the source code (`myuser` / `mypassword`, database `mydatabase`).
+     This launches a local PostgreSQL 16 container with the credentials that match the defaults found in `.env.example` (`myuser` / `mypassword`, database `mydatabase`).
 
-   - Alternatively, point the app at any PostgreSQL instance and make sure the credentials match the values in [`server.js`](server.js) and [`setup-database.js`](setup-database.js).
+   - Alternatively, point the app at any PostgreSQL instance and make sure the credentials in your `.env` file match the remote server.
 
-3. **Create the schema and seed data**
+4. **Create the schema and seed data**
 
    ```bash
    node setup-database.js
@@ -51,24 +59,31 @@ A Node.js + Express backend that powers the ClothingShop mobile application. It 
 
    The script drops and recreates the tables (`users`, `categories`, `products`, `carts`, `cart_items`) and inserts a small set of demo products and categories for local testing.
 
-4. **Start the development server**
+5. **Start the development server**
 
    ```bash
    node server.js
    ```
 
-   By default the API listens on `http://localhost:3000`.
+   By default the API listens on `http://localhost:3000` (configurable via the `PORT` environment variable).
 
 ## Environment configuration
 
-The current project keeps configuration inline for simplicity. For production use you should externalise the following values:
+Configuration is now driven via environment variables (loaded from `.env` during local development). The API recognises the following keys:
 
-| Purpose | Location | Default |
+| Variable | Description | Default |
 | --- | --- | --- |
-| Database connection (host, port, user, password, database) | [`server.js`](server.js), [`setup-database.js`](setup-database.js) | `localhost:5432`, `myuser`, `mypassword`, `mydatabase` |
-| JWT signing secret | [`server.js`](server.js) | `yourSecretKey` |
+| `PORT` | Port for the Express server. | `3000` |
+| `DATABASE_URL` | Full PostgreSQL connection string. If provided it takes precedence over the individual DB_* settings. | _none_ |
+| `DB_HOST` | Database host for local/dev use. | `localhost` |
+| `DB_PORT` | Database port. | `5432` |
+| `DB_USER` | Database user. | `myuser` |
+| `DB_PASSWORD` | Database password. | `mypassword` |
+| `DB_NAME` | Database name. | `mydatabase` |
+| `DB_SSL` | Set to `true` to enable SSL connections (uses `rejectUnauthorized: false`). | `false` |
+| `JWT_SECRET` | Secret used for signing and verifying JWTs. **Change this in production.** | `dev-secret-change-me` |
 
-Update the constants directly or refactor the files to read from environment variables before deploying to other environments.
+Production deployments should provide secure values for these variables via the hosting platform's secret management system instead of storing them in `.env`.
 
 ## API reference
 
@@ -94,5 +109,3 @@ Update the constants directly or refactor the files to read from environment var
 ## Useful tips
 
 - For local Android emulator testing, expose the API using the host machine's IP address or a tunnelling service such as ngrok.
-- Passwords are hashed using bcrypt with 10 rounds. You can adjust the salt rounds in [`server.js`](server.js) if you need stronger hashing.
-- All cart endpoints require a valid JWT token, which the mobile client stores via DataStore.
