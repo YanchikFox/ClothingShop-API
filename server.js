@@ -11,6 +11,8 @@ const {
     cartQuantitySchema,
     formatZodError,
 } = require('./schemas/cartSchemas');
+const { createError, errorHandler } = require('./errors');
+
 const app = express();
 app.use(express.json());
 
@@ -45,8 +47,11 @@ if (DB_SSL === 'true') {
 const pool = new Pool(poolConfig);
 
 const validationErrorResponse = (error) => ({
-    error: 'ValidationError',
-    details: formatZodError(error),
+    error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Request validation failed',
+        details: formatZodError(error),
+    },
 });
 
 /**
@@ -54,7 +59,7 @@ const validationErrorResponse = (error) => ({
  * Query parameters:
  *   - gender (optional): Filter products by gender category (male, female, unisex)
  */
-app.get('/api/products', async (req, res) => {
+app.get('/api/products', async (req, res, next) => {
     try {
         const { gender } = req.query;
 
@@ -73,8 +78,7 @@ app.get('/api/products', async (req, res) => {
         res.json(allProducts.rows);
 
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        next(createError('GET_PRODUCTS_FAILED', 500, 'Unable to retrieve products', err));
     }
 });
 
@@ -84,19 +88,29 @@ app.get('/api/products', async (req, res) => {
  *   - email: User's email address (required)
  *   - password: User's password (required)
  */
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', async (req, res, next) => {
     try {
         const { email, password } = req.body;
-        
+
         // Validate required fields
         if (!email || !password) {
-            return res.status(400).json({ message: "Email and password are required" });
+            return res.status(400).json({
+                error: {
+                    code: 'REGISTRATION_VALIDATION_ERROR',
+                    message: 'Email and password are required',
+                },
+            });
         }
 
         // Check if user already exists
         const user = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
         if (user.rows.length > 0) {
-            return res.status(400).json({ message: "User with this email already exists" });
+            return res.status(400).json({
+                error: {
+                    code: 'USER_ALREADY_EXISTS',
+                    message: 'User with this email already exists',
+                },
+            });
         }
 
         // Hash password before storing
@@ -111,8 +125,7 @@ app.post('/api/register', async (req, res) => {
 
         res.status(201).json(newUser.rows[0]);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        next(createError('REGISTER_FAILED', 500, 'Unable to register user', err));
     }
 });
 
@@ -122,25 +135,40 @@ app.post('/api/register', async (req, res) => {
  *   - email: User's email address (required)
  *   - password: User's password (required)
  */
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', async (req, res, next) => {
     try {
         const { email, password } = req.body;
-        
+
         // Validate required fields
         if (!email || !password) {
-            return res.status(400).json({ message: "Email and password are required" });
+            return res.status(400).json({
+                error: {
+                    code: 'LOGIN_VALIDATION_ERROR',
+                    message: 'Email and password are required',
+                },
+            });
         }
 
         // Find user by email
         const user = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
         if (user.rows.length === 0) {
-            return res.status(400).json({ message: "Invalid credentials" });
+            return res.status(400).json({
+                error: {
+                    code: 'INVALID_CREDENTIALS',
+                    message: 'Invalid credentials',
+                },
+            });
         }
 
         // Verify password
         const isMatch = await bcrypt.compare(password, user.rows[0].password);
         if (!isMatch) {
-            return res.status(400).json({ message: "Invalid credentials" });
+            return res.status(400).json({
+                error: {
+                    code: 'INVALID_CREDENTIALS',
+                    message: 'Invalid credentials',
+                },
+            });
         }
 
         // Generate JWT token
@@ -150,8 +178,7 @@ app.post('/api/login', async (req, res) => {
         res.json({ token });
 
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        next(createError('LOGIN_FAILED', 500, 'Unable to log in user', err));
     }
 });
 
@@ -159,26 +186,19 @@ app.post('/api/login', async (req, res) => {
  * GET /api/cart - Retrieve current user's cart items
  * Requires authentication token in x-auth-token header
  */
-app.get('/api/cart', authMiddleware, async (req, res) => {
-        const validationResult = cartItemBodySchema.safeParse(req.body);
-    if (!validationResult.success) {
-        return res.status(400).json(validationErrorResponse(validationResult.error));
-    }
-
-    const { productId, quantity } = validationResult.data;
+app.get('/api/cart', authMiddleware, async (req, res, next) => {
     try {
         // Query cart items with product details for the authenticated user
         const cartItems = await pool.query(
-            `SELECT p.*, ci.quantity FROM cart_items ci 
-             JOIN products p ON ci.product_id = p.id 
-             JOIN carts c ON ci.cart_id = c.id 
+            `SELECT p.*, ci.quantity FROM cart_items ci
+             JOIN products p ON ci.product_id = p.id
+             JOIN carts c ON ci.cart_id = c.id
              WHERE c.user_id = $1`,
             [req.user.id]
         );
         res.json(cartItems.rows);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        next(createError('GET_CART_FAILED', 500, 'Unable to retrieve cart items', err));
     }
 });
 
@@ -189,8 +209,13 @@ app.get('/api/cart', authMiddleware, async (req, res) => {
  *   - productId: ID of the product to add (required)
  *   - quantity: Quantity to add (required)
  */
-app.post('/api/cart', authMiddleware, async (req, res) => {
-    const { productId, quantity } = req.body;
+app.post('/api/cart', authMiddleware, async (req, res, next) => {
+    const validation = cartItemBodySchema.safeParse(req.body);
+    if (!validation.success) {
+        return res.status(400).json(validationErrorResponse(validation.error));
+    }
+
+    const { productId, quantity } = validation.data;
     try {
         // Get or create user's cart
         let cart = await pool.query("SELECT * FROM carts WHERE user_id = $1", [req.user.id]);
@@ -208,8 +233,7 @@ app.post('/api/cart', authMiddleware, async (req, res) => {
         const newItem = await pool.query(query, [cartId, productId, quantity]);
         res.status(201).json(newItem.rows[0]);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        next(createError('UPSERT_CART_ITEM_FAILED', 500, 'Unable to update cart item', err));
     }
 });
 
@@ -221,7 +245,7 @@ app.post('/api/cart', authMiddleware, async (req, res) => {
  * Request body:
  *   - quantity: New quantity value (required)
  */
-app.put('/api/cart/item/:productId', authMiddleware, async (req, res) => {
+app.put('/api/cart/item/:productId', authMiddleware, async (req, res, next) => {
     const paramsValidation = cartItemParamsSchema.safeParse(req.params);
     if (!paramsValidation.success) {
         return res.status(400).json(validationErrorResponse(paramsValidation.error));
@@ -239,7 +263,12 @@ app.put('/api/cart/item/:productId', authMiddleware, async (req, res) => {
         // Find user's cart
         const cart = await pool.query("SELECT id FROM carts WHERE user_id = $1", [req.user.id]);
         if (cart.rows.length === 0) {
-            return res.status(404).json({ message: "Cart not found" });
+            return res.status(404).json({
+                error: {
+                    code: 'CART_NOT_FOUND',
+                    message: 'Cart not found',
+                },
+            });
         }
         const cartId = cart.rows[0].id;
 
@@ -250,13 +279,17 @@ app.put('/api/cart/item/:productId', authMiddleware, async (req, res) => {
         );
 
         if (updatedItem.rows.length === 0) {
-            return res.status(404).json({ message: "Product not found in cart" });
+            return res.status(404).json({
+                error: {
+                    code: 'CART_PRODUCT_NOT_FOUND',
+                    message: 'Product not found in cart',
+                },
+            });
         }
 
         res.json(updatedItem.rows[0]);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        next(createError('UPDATE_CART_ITEM_FAILED', 500, 'Unable to update cart item', err));
     }
 });
 
@@ -266,14 +299,19 @@ app.put('/api/cart/item/:productId', authMiddleware, async (req, res) => {
  * URL parameters:
  *   - productId: ID of the product to remove
  */
-app.delete('/api/cart/item/:productId', authMiddleware, async (req, res) => {
+app.delete('/api/cart/item/:productId', authMiddleware, async (req, res, next) => {
     const { productId } = req.params;
-    
+
     try {
         // Find user's cart
         const cart = await pool.query("SELECT id FROM carts WHERE user_id = $1", [req.user.id]);
         if (cart.rows.length === 0) {
-            return res.status(404).json({ message: "Cart not found" });
+            return res.status(404).json({
+                error: {
+                    code: 'CART_NOT_FOUND',
+                    message: 'Cart not found',
+                },
+            });
         }
         const cartId = cart.rows[0].id;
 
@@ -285,8 +323,7 @@ app.delete('/api/cart/item/:productId', authMiddleware, async (req, res) => {
 
         res.json({ message: "Product removed from cart" });
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        next(createError('DELETE_CART_ITEM_FAILED', 500, 'Unable to remove cart item', err));
     }
 });
 
@@ -294,7 +331,7 @@ app.delete('/api/cart/item/:productId', authMiddleware, async (req, res) => {
  * GET /api/profile - Get authenticated user's profile information
  * Requires authentication token in x-auth-token header
  */
-app.get('/api/profile', authMiddleware, async (req, res) => {
+app.get('/api/profile', authMiddleware, async (req, res, next) => {
     try {
         // Retrieve user profile data using ID from JWT token
         const user = await pool.query("SELECT id, email, created_at FROM users WHERE id = $1", [
@@ -302,26 +339,29 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
         ]);
 
         if (user.rows.length === 0) {
-            return res.status(404).json({ message: "User not found" });
+            return res.status(404).json({
+                error: {
+                    code: 'USER_NOT_FOUND',
+                    message: 'User not found',
+                },
+            });
         }
 
         res.json(user.rows[0]);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        next(createError('GET_PROFILE_FAILED', 500, 'Unable to retrieve profile', err));
     }
 });
 
 /**
  * GET /api/categories - Retrieve all product categories
  */
-app.get('/api/categories', async (req, res) => {
+app.get('/api/categories', async (req, res, next) => {
     try {
         const allCategories = await pool.query("SELECT * FROM categories ORDER BY id");
         res.json(allCategories.rows);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        next(createError('GET_CATEGORIES_FAILED', 500, 'Unable to retrieve categories', err));
     }
 });
 
@@ -331,7 +371,7 @@ app.get('/api/categories', async (req, res) => {
  *   - q: Search query string (required)
  */
 
-app.get('/api/search', async (req, res) => {
+app.get('/api/search', async (req, res, next) => {
     try {
         const { q } = req.query;
 
@@ -347,12 +387,13 @@ app.get('/api/search', async (req, res) => {
 
         res.json(searchResults.rows);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        next(createError('SEARCH_FAILED', 500, 'Unable to perform search', err));
     }
 });
 
 // Start the Express server
+
+app.use(errorHandler);
 
 const port = Number(PORT) || 3000;
 if (require.main === module) {

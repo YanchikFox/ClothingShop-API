@@ -43,10 +43,13 @@ describe('Cart route validation', () => {
 
         expect(response.status).toBe(400);
         expect(response.body).toEqual({
-            error: 'ValidationError',
-            details: expect.arrayContaining([
-                expect.objectContaining({ path: 'productId' }),
-            ]),
+            error: {
+                code: 'VALIDATION_ERROR',
+                message: 'Request validation failed',
+                details: expect.arrayContaining([
+                    expect.objectContaining({ path: 'productId' }),
+                ]),
+            },
         });
         expect(pool.query).not.toHaveBeenCalled();
     });
@@ -60,10 +63,13 @@ describe('Cart route validation', () => {
 
         expect(response.status).toBe(400);
         expect(response.body).toEqual({
-            error: 'ValidationError',
-            details: expect.arrayContaining([
-                expect.objectContaining({ path: 'quantity' }),
-            ]),
+            error: {
+                code: 'VALIDATION_ERROR',
+                message: 'Request validation failed',
+                details: expect.arrayContaining([
+                    expect.objectContaining({ path: 'quantity' }),
+                ]),
+            },
         });
         expect(pool.query).not.toHaveBeenCalled();
     });
@@ -77,10 +83,13 @@ describe('Cart route validation', () => {
 
         expect(response.status).toBe(400);
         expect(response.body).toEqual({
-            error: 'ValidationError',
-            details: expect.arrayContaining([
-                expect.objectContaining({ path: 'productId' }),
-            ]),
+            error: {
+                code: 'VALIDATION_ERROR',
+                message: 'Request validation failed',
+                details: expect.arrayContaining([
+                    expect.objectContaining({ path: 'quantity' }),
+                ]),
+            },
         });
         expect(pool.query).not.toHaveBeenCalled();
     });
