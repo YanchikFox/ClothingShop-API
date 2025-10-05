@@ -55,22 +55,32 @@ const setupQuery = `
     );
     
     -- Product categories (male, female, unisex)
-    CREATE TABLE categories ( 
-        id VARCHAR(50) PRIMARY KEY, 
-        name VARCHAR(100) NOT NULL, 
-        image_path VARCHAR(255) NOT NULL 
+    CREATE TABLE categories (
+        id VARCHAR(50) PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        slug VARCHAR(100) NOT NULL,
+        parent_id VARCHAR(50) REFERENCES categories(id),
+        image_path VARCHAR(255) NOT NULL,
+        icon_path VARCHAR(255) NOT NULL
     );
-    
+
     -- Product catalog
-    CREATE TABLE products ( 
-        id VARCHAR(50) PRIMARY KEY, 
-        article VARCHAR(50) NOT NULL, 
-        image_path VARCHAR(255) NOT NULL, 
-        name VARCHAR(255) NOT NULL, 
-        price_string VARCHAR(50) NOT NULL, 
-        description TEXT NOT NULL, 
-        is_bestseller BOOLEAN NOT NULL, 
-        gender VARCHAR(50) NOT NULL 
+    CREATE TABLE products (
+        id VARCHAR(50) PRIMARY KEY,
+        article VARCHAR(50) NOT NULL,
+        category_id VARCHAR(50) REFERENCES categories(id),
+        image_path VARCHAR(255) NOT NULL,
+        image_urls JSONB DEFAULT '[]',
+        name VARCHAR(255) NOT NULL,
+        price NUMERIC(10, 2) NOT NULL,
+        price_string VARCHAR(50) NOT NULL,
+        description TEXT NOT NULL,
+        is_bestseller BOOLEAN NOT NULL,
+        gender VARCHAR(50) NOT NULL,
+        composition TEXT DEFAULT '',
+        care_instructions TEXT DEFAULT '',
+        features JSONB DEFAULT '[]',
+        reviews JSONB DEFAULT '[]'
     );
 
     -- Shopping cart tables for e-commerce functionality
@@ -91,14 +101,33 @@ const setupQuery = `
     );
 
     -- Sample data for development and testing
-    INSERT INTO categories (id, name, image_path) VALUES 
-        ('female', 'Women', 'images/categories/women.jpg'), 
-        ('male', 'Men', 'images/categories/men.jpg'), 
-        ('unisex', 'Unisex', 'images/categories/unisex.jpg');
-        
-    INSERT INTO products (id, article, image_path, name, price_string, description, is_bestseller, gender) VALUES 
-        ('su001', '1023', 'images/1.jpg', 'Embroidered T-shirt', '1 200 ₴', 'This model combines comfort and style...', true, 'unisex'), 
-        ('su002', '2045', 'images/2.jpg', 'Basic Long Sleeve', '1 340 ₴', 'Breathable fabric and minimalist design...', false, 'male');
+    INSERT INTO categories (id, name, slug, parent_id, image_path, icon_path) VALUES
+        ('female', 'Женщины', 'women', NULL, 'images/categories/women.jpg', 'images/categories/women_icon.jpg'),
+        ('male', 'Мужчины', 'men', NULL, 'images/categories/men.jpg', 'images/categories/men_icon.jpg'),
+        ('unisex', 'Унисекс', 'unisex', NULL, 'images/categories/unisex.jpg', 'images/categories/unisex_icon.jpg');
+
+    INSERT INTO products (
+        id, article, category_id, image_path, image_urls, name, price, price_string,
+        description, is_bestseller, gender, composition, care_instructions, features, reviews
+    ) VALUES
+        (
+            'su001', '1023', 'unisex', 'images/1.jpg',
+            '["images/1.jpg", "images/1_detail.jpg"]'::jsonb,
+            'Embroidered T-shirt', 1200.00, '1 200 ₴',
+            'Комфортная и стильная футболка с вышивкой.', true, 'unisex',
+            '100% хлопок', 'Деликатная стирка при 30°C, не отбеливать.',
+            '[{"title": "Посадка", "value": "Свободная"}, {"title": "Производство", "value": "Украина"}]'::jsonb,
+            '[{"author": "Олена", "rating": 5, "comment": "Очень мягкая ткань"}]'::jsonb
+        ),
+        (
+            'su002', '2045', 'male', 'images/2.jpg',
+            '["images/2.jpg"]'::jsonb,
+            'Basic Long Sleeve', 1340.00, '1 340 ₴',
+            'Базовый лонгслив из дышащей ткани.', false, 'male',
+            '95% хлопок, 5% эластан', 'Стирка при 30°C, сушить на воздухе.',
+            '[{"title": "Посадка", "value": "Регулярная"}]'::jsonb,
+            '[{"author": "Андрій", "rating": 4, "comment": "Отлично сидит"}]'::jsonb
+        );
 
 `;
 

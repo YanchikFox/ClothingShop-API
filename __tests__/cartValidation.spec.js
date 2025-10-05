@@ -108,8 +108,8 @@ describe('Cart route validation', () => {
                 message: 'Request validation failed',
                 details: expect.arrayContaining([
                     expect.objectContaining({ path: 'quantity' }),
-            ]),
-        },
+                ]),
+            },
         });
         expect(pool.query).not.toHaveBeenCalled();
     });

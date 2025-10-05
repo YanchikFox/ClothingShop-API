@@ -54,6 +54,90 @@ const validationErrorResponse = (error) => ({
     },
 });
 
+const parseJsonField = (value, fallback = []) => {
+    if (Array.isArray(value)) {
+        return value;
+    }
+
+    if (value === null || value === undefined) {
+        return fallback;
+    }
+
+    if (typeof value === 'string') {
+        try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : fallback;
+        } catch (_err) {
+            return fallback;
+        }
+    }
+
+    if (typeof value === 'object') {
+        return value;
+    }
+
+    return fallback;
+};
+
+const buildImageList = (row) => {
+    const images = parseJsonField(row.image_urls ?? row.imageUrls, []);
+    if (images.length > 0) {
+        return images;
+    }
+
+    return row.image_path ? [row.image_path] : [];
+};
+
+const parsePriceValue = (row) => {
+    if (typeof row.price === 'number') {
+        return row.price;
+    }
+
+    if (typeof row.price === 'string') {
+        const numeric = Number.parseFloat(row.price);
+        if (!Number.isNaN(numeric)) {
+            return numeric;
+        }
+    }
+
+    if (typeof row.price_string === 'string') {
+        const cleaned = row.price_string.replace(/[^0-9.,-]/g, '').replace(',', '.');
+        const numeric = Number.parseFloat(cleaned);
+        if (!Number.isNaN(numeric)) {
+            return numeric;
+        }
+    }
+
+    return 0;
+};
+
+const toProductResponse = (row) => ({
+    id: row.id,
+    article: row.article,
+    category_id: row.category_id ?? row.gender ?? null,
+    name: row.name,
+    description: row.description ?? '',
+    price: parsePriceValue(row),
+    price_string: row.price_string ?? '',
+    is_bestseller: Boolean(row.is_bestseller),
+    imageUrls: buildImageList(row),
+    image_path: row.image_path ?? null,
+    composition: row.composition ?? '',
+    careInstructions: row.care_instructions ?? row.careInstructions ?? '',
+    features: parseJsonField(row.features),
+    reviews: parseJsonField(row.reviews),
+    gender: row.gender ?? row.category_id ?? null,
+});
+
+const toCategoryResponse = (row) => ({
+    id: row.id,
+    name: row.name,
+    slug: row.slug ?? row.id,
+    parent_id: row.parent_id ?? null,
+    image_path: row.image_path ?? '',
+    icon_path: row.icon_path ?? row.image_path ?? '',
+});
+
 /**
  * GET /api/products - Retrieve products with optional gender filtering
  * Query parameters:
@@ -61,21 +145,21 @@ const validationErrorResponse = (error) => ({
  */
 app.get('/api/products', async (req, res, next) => {
     try {
-        const { gender } = req.query;
+        const { gender, categoryId } = req.query;
+        const filter = gender ?? categoryId;
 
-        let query = "SELECT * FROM products";
+        let query = 'SELECT * FROM products';
         const queryParams = [];
 
-        // Apply gender filter if specified
-        if (gender) {
-            query += " WHERE gender = $1";
-            queryParams.push(gender);
+        if (filter) {
+            query += ' WHERE gender = $1';
+            queryParams.push(filter);
         }
 
-        query += " ORDER BY id";
+        query += ' ORDER BY id';
 
         const allProducts = await pool.query(query, queryParams);
-        res.json(allProducts.rows);
+        res.json(allProducts.rows.map(toProductResponse));
 
     } catch (err) {
         next(createError('GET_PRODUCTS_FAILED', 500, 'Unable to retrieve products', err));
@@ -186,20 +270,25 @@ app.post('/api/login', async (req, res, next) => {
  * GET /api/cart - Retrieve current user's cart items
  * Requires authentication token in x-auth-token header
  */
-app.get('/api/cart', authMiddleware, async (req, res) => {
+app.get('/api/cart', authMiddleware, async (req, res, next) => {
     try {
-        // Query cart items with product details for the authenticated user
         const cartItems = await pool.query(
-            `SELECT p.*, ci.quantity FROM cart_items ci
+            `SELECT p.*, ci.quantity
+             FROM cart_items ci
              JOIN products p ON ci.product_id = p.id
-             JOIN carts c ON ci.cart_id = c.id 
+             JOIN carts c ON ci.cart_id = c.id
              WHERE c.user_id = $1`,
             [req.user.id]
         );
-        res.json(cartItems.rows);
+
+        const payload = cartItems.rows.map((row) => ({
+            ...toProductResponse(row),
+            quantity: Number(row.quantity) || 0,
+        }));
+
+        res.json(payload);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        next(createError('GET_CART_FAILED', 500, 'Unable to retrieve cart', err));
     }
 });
 
@@ -234,8 +323,7 @@ app.post('/api/cart', authMiddleware, async (req, res) => {
         const newItem = await pool.query(query, [cartId, productId, quantity]);
         res.status(201).json(newItem.rows[0]);
     } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
+        next(createError('UPSERT_CART_ITEM_FAILED', 500, 'Unable to add product to cart', err));
     }
 });
 
@@ -360,8 +448,8 @@ app.get('/api/profile', authMiddleware, async (req, res, next) => {
  */
 app.get('/api/categories', async (req, res, next) => {
     try {
-        const allCategories = await pool.query("SELECT * FROM categories ORDER BY id");
-        res.json(allCategories.rows);
+        const allCategories = await pool.query('SELECT * FROM categories ORDER BY id');
+        res.json(allCategories.rows.map(toCategoryResponse));
     } catch (err) {
         next(createError('GET_CATEGORIES_FAILED', 500, 'Unable to retrieve categories', err));
     }
@@ -375,19 +463,26 @@ app.get('/api/categories', async (req, res, next) => {
 
 app.get('/api/search', async (req, res, next) => {
     try {
-        const { q } = req.query;
+        const { q, gender, categoryId } = req.query;
+        const filter = gender ?? categoryId;
 
         if (!q) {
             return res.json([]); // Return empty array for empty queries
         }
 
-        // Perform case-insensitive search across product names and descriptions
-        const searchResults = await pool.query(
-            "SELECT * FROM products WHERE name ILIKE $1 OR description ILIKE $1",
-            [`%${q}%`]
-        );
+        const params = [`%${q}%`];
+        let query = 'SELECT * FROM products WHERE (name ILIKE $1 OR description ILIKE $1)';
 
-        res.json(searchResults.rows);
+        if (filter) {
+            query += ' AND gender = $2';
+            params.push(filter);
+        }
+
+        query += ' ORDER BY id';
+
+        const searchResults = await pool.query(query, params);
+
+        res.json(searchResults.rows.map(toProductResponse));
     } catch (err) {
         next(createError('SEARCH_FAILED', 500, 'Unable to perform search', err));
     }
