@@ -11,6 +11,7 @@ const {
     cartQuantitySchema,
     formatZodError,
 } = require('./schemas/cartSchemas');
+const { profileUpdateSchema } = require('./schemas/profileSchemas');
 const { createError, errorHandler } = require('./errors');
 
 const app = express();
@@ -46,6 +47,47 @@ if (DB_SSL === 'true') {
 
 const pool = new Pool(poolConfig);
 
+const SUPPORTED_LANGUAGES = ['en', 'ru', 'uk'];
+const DEFAULT_LANGUAGE = 'en';
+
+const normalizeLanguageTag = (tag) => {
+    if (!tag || typeof tag !== 'string') {
+        return null;
+    }
+    const normalized = tag.trim().toLowerCase();
+    if (!normalized) {
+        return null;
+    }
+    return normalized.split('-')[0];
+};
+
+const parseAcceptLanguageHeader = (headerValue) => {
+    if (!headerValue || typeof headerValue !== 'string') {
+        return [];
+    }
+    return headerValue
+        .split(',')
+        .map((part) => part.split(';')[0].trim())
+        .filter(Boolean);
+};
+
+const resolveLanguage = (req) => {
+    const queryLang = normalizeLanguageTag(req.query?.lang);
+    if (queryLang && SUPPORTED_LANGUAGES.includes(queryLang)) {
+        return queryLang;
+    }
+
+    const headerLanguages = parseAcceptLanguageHeader(req.headers['accept-language']);
+    for (const lang of headerLanguages) {
+        const normalized = normalizeLanguageTag(lang);
+        if (normalized && SUPPORTED_LANGUAGES.includes(normalized)) {
+            return normalized;
+        }
+    }
+
+    return DEFAULT_LANGUAGE;
+};
+
 const validationErrorResponse = (error) => ({
     error: {
         code: 'VALIDATION_ERROR',
@@ -77,6 +119,59 @@ const parseJsonField = (value, fallback = []) => {
     }
 
     return fallback;
+};
+
+const parseJsonObjectField = (value, fallback = {}) => {
+    if (value === null || value === undefined) {
+        return fallback;
+    }
+
+    if (typeof value === 'object' && !Array.isArray(value)) {
+        return value;
+    }
+
+    if (typeof value === 'string') {
+        try {
+            const parsed = JSON.parse(value);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                return parsed;
+            }
+        } catch (_err) {
+            return fallback;
+        }
+    }
+
+    return fallback;
+};
+
+const getLocalizedText = (baseValue, translations, language) => {
+    const translationMap = parseJsonObjectField(translations, {});
+    if (language && translationMap[language]) {
+        return translationMap[language];
+    }
+
+    if (translationMap[DEFAULT_LANGUAGE]) {
+        return translationMap[DEFAULT_LANGUAGE];
+    }
+
+    return baseValue ?? '';
+};
+
+const buildLocalizedFeatures = (row, language) => {
+    const features = parseJsonField(row.features, []);
+    if (!Array.isArray(features)) {
+        return [];
+    }
+
+    return features.map((feature) => {
+        const title = getLocalizedText(feature.title ?? '', feature.title_translations, language);
+        const value = getLocalizedText(feature.value ?? '', feature.value_translations, language);
+
+        return {
+            title,
+            value,
+        };
+    });
 };
 
 const buildImageList = (row) => {
@@ -111,32 +206,110 @@ const parsePriceValue = (row) => {
     return 0;
 };
 
-const toProductResponse = (row) => ({
-    id: row.id,
-    article: row.article,
-    category_id: row.category_id ?? row.gender ?? null,
-    name: row.name,
-    description: row.description ?? '',
-    price: parsePriceValue(row),
-    price_string: row.price_string ?? '',
-    is_bestseller: Boolean(row.is_bestseller),
-    imageUrls: buildImageList(row),
-    image_path: row.image_path ?? null,
-    composition: row.composition ?? '',
-    careInstructions: row.care_instructions ?? row.careInstructions ?? '',
-    features: parseJsonField(row.features),
-    reviews: parseJsonField(row.reviews),
-    gender: row.gender ?? row.category_id ?? null,
-});
+const toProductResponse = (row, language) => {
+    const nameTranslations = row.name_translations ?? row.nameTranslations;
+    const descriptionTranslations = row.description_translations ?? row.descriptionTranslations;
+    const compositionTranslations = row.composition_translations ?? row.compositionTranslations;
+    const careTranslations = row.care_instructions_translations ?? row.careInstructionsTranslations;
 
-const toCategoryResponse = (row) => ({
+    return {
+        id: row.id,
+        article: row.article,
+        category_id: row.category_id ?? row.gender ?? null,
+        name: getLocalizedText(row.name, nameTranslations, language),
+        description: getLocalizedText(row.description ?? '', descriptionTranslations, language),
+        price: parsePriceValue(row),
+        price_string: row.price_string ?? '',
+        is_bestseller: Boolean(row.is_bestseller),
+        imageUrls: buildImageList(row),
+        image_path: row.image_path ?? null,
+        composition: getLocalizedText(row.composition ?? '', compositionTranslations, language),
+        careInstructions: getLocalizedText(
+            row.care_instructions ?? row.careInstructions ?? '',
+            careTranslations,
+            language
+        ),
+        features: buildLocalizedFeatures(row, language),
+        reviews: parseJsonField(row.reviews),
+        gender: row.gender ?? row.category_id ?? null,
+    };
+};
+
+const toCategoryResponse = (row, language) => ({
     id: row.id,
-    name: row.name,
+    name: getLocalizedText(row.name, row.name_translations, language),
     slug: row.slug ?? row.id,
     parent_id: row.parent_id ?? null,
     image_path: row.image_path ?? '',
     icon_path: row.icon_path ?? row.image_path ?? '',
 });
+
+const fetchUserProfile = async (userId) => {
+    const userResult = await pool.query(
+        `SELECT id, email, full_name, phone_number, created_at
+         FROM users
+         WHERE id = $1`,
+        [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+        return null;
+    }
+
+    const user = userResult.rows[0];
+
+    const addressesResult = await pool.query(
+        `SELECT id, label, line1, line2, city, postal_code, country, is_default
+         FROM user_addresses
+         WHERE user_id = $1
+         ORDER BY is_default DESC, id`,
+        [userId]
+    );
+
+    const ordersResult = await pool.query(
+        `SELECT id, order_number, status, total_amount, placed_at
+         FROM orders
+         WHERE user_id = $1
+         ORDER BY placed_at DESC`,
+        [userId]
+    );
+
+    return {
+        id: user.id,
+        email: user.email,
+        name: user.full_name,
+        phone: user.phone_number,
+        created_at: user.created_at,
+        addresses: addressesResult.rows,
+        order_history: ordersResult.rows,
+    };
+};
+
+const sanitizeAddresses = (addresses) => {
+    if (!Array.isArray(addresses) || addresses.length === 0) {
+        return [];
+    }
+
+    let defaultAssigned = false;
+
+    return addresses.map((address, index) => {
+        let isDefault = false;
+
+        if (address.is_default && !defaultAssigned) {
+            isDefault = true;
+            defaultAssigned = true;
+        } else if (!defaultAssigned && index === 0) {
+            isDefault = true;
+            defaultAssigned = true;
+        }
+
+        return {
+            ...address,
+            line2: address.line2 ?? null,
+            is_default: isDefault,
+        };
+    });
+};
 
 /**
  * GET /api/products - Retrieve products with optional gender filtering
@@ -145,6 +318,7 @@ const toCategoryResponse = (row) => ({
  */
 app.get('/api/products', async (req, res, next) => {
     try {
+        const language = resolveLanguage(req);
         const { gender, categoryId } = req.query;
         const filter = gender ?? categoryId;
 
@@ -159,7 +333,7 @@ app.get('/api/products', async (req, res, next) => {
         query += ' ORDER BY id';
 
         const allProducts = await pool.query(query, queryParams);
-        res.json(allProducts.rows.map(toProductResponse));
+        res.json(allProducts.rows.map((row) => toProductResponse(row, language)));
 
     } catch (err) {
         next(createError('GET_PRODUCTS_FAILED', 500, 'Unable to retrieve products', err));
@@ -272,6 +446,7 @@ app.post('/api/login', async (req, res, next) => {
  */
 app.get('/api/cart', authMiddleware, async (req, res, next) => {
     try {
+        const language = resolveLanguage(req);
         const cartItems = await pool.query(
             `SELECT p.*, ci.quantity
              FROM cart_items ci
@@ -282,7 +457,7 @@ app.get('/api/cart', authMiddleware, async (req, res, next) => {
         );
 
         const payload = cartItems.rows.map((row) => ({
-            ...toProductResponse(row),
+            ...toProductResponse(row, language),
             quantity: Number(row.quantity) || 0,
         }));
 
@@ -423,12 +598,9 @@ app.delete('/api/cart/item/:productId', authMiddleware, async (req, res, next) =
  */
 app.get('/api/profile', authMiddleware, async (req, res, next) => {
     try {
-        // Retrieve user profile data using ID from JWT token
-        const user = await pool.query("SELECT id, email, created_at FROM users WHERE id = $1", [
-            req.user.id
-        ]);
+        const profile = await fetchUserProfile(req.user.id);
 
-        if (user.rows.length === 0) {
+        if (!profile) {
             return res.status(404).json({
                 error: {
                     code: 'USER_NOT_FOUND',
@@ -437,9 +609,58 @@ app.get('/api/profile', authMiddleware, async (req, res, next) => {
             });
         }
 
-        res.json(user.rows[0]);
+        res.json(profile);
     } catch (err) {
         next(createError('GET_PROFILE_FAILED', 500, 'Unable to retrieve profile', err));
+    }
+});
+
+app.put('/api/profile', authMiddleware, async (req, res, next) => {
+    const validationResult = profileUpdateSchema.safeParse(req.body);
+    if (!validationResult.success) {
+        return res.status(400).json(validationErrorResponse(validationResult.error));
+    }
+
+    const { name, phone, addresses } = validationResult.data;
+    const sanitizedAddresses = sanitizeAddresses(addresses);
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        await client.query(
+            'UPDATE users SET full_name = $1, phone_number = $2 WHERE id = $3',
+            [name.trim(), phone ?? '', req.user.id]
+        );
+
+        await client.query('DELETE FROM user_addresses WHERE user_id = $1', [req.user.id]);
+
+        for (const address of sanitizedAddresses) {
+            await client.query(
+                `INSERT INTO user_addresses (
+                    user_id, label, line1, line2, city, postal_code, country, is_default
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [
+                    req.user.id,
+                    address.label,
+                    address.line1,
+                    address.line2,
+                    address.city,
+                    address.postal_code,
+                    address.country,
+                    address.is_default,
+                ]
+            );
+        }
+
+        await client.query('COMMIT');
+
+        const updatedProfile = await fetchUserProfile(req.user.id);
+        res.json(updatedProfile);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        next(createError('UPDATE_PROFILE_FAILED', 500, 'Unable to update profile', err));
+    } finally {
+        client.release();
     }
 });
 
@@ -448,8 +669,9 @@ app.get('/api/profile', authMiddleware, async (req, res, next) => {
  */
 app.get('/api/categories', async (req, res, next) => {
     try {
+        const language = resolveLanguage(req);
         const allCategories = await pool.query('SELECT * FROM categories ORDER BY id');
-        res.json(allCategories.rows.map(toCategoryResponse));
+        res.json(allCategories.rows.map((row) => toCategoryResponse(row, language)));
     } catch (err) {
         next(createError('GET_CATEGORIES_FAILED', 500, 'Unable to retrieve categories', err));
     }
@@ -463,26 +685,45 @@ app.get('/api/categories', async (req, res, next) => {
 
 app.get('/api/search', async (req, res, next) => {
     try {
+        const language = resolveLanguage(req);
         const { q, gender, categoryId } = req.query;
-        const filter = gender ?? categoryId;
 
         if (!q) {
             return res.json([]); // Return empty array for empty queries
         }
 
-        const params = [`%${q}%`];
-        let query = 'SELECT * FROM products WHERE (name ILIKE $1 OR description ILIKE $1)';
+        const params = [`%${q}%`, language];
+        let query = `
+            SELECT * FROM products
+            WHERE (
+                name ILIKE $1
+                OR description ILIKE $1
+                OR COALESCE(name_translations ->> $2, '') ILIKE $1
+                OR COALESCE(description_translations ->> $2, '') ILIKE $1
+            )
+        `;
 
-        if (filter) {
-            query += ' AND gender = $2';
-            params.push(filter);
+        const additionalFilters = [];
+
+        if (gender) {
+            params.push(gender);
+            additionalFilters.push(`gender = $${params.length}`);
+        }
+
+        if (categoryId) {
+            params.push(categoryId);
+            additionalFilters.push(`category_id = $${params.length}`);
+        }
+
+        if (additionalFilters.length > 0) {
+            query += ` AND ${additionalFilters.join(' AND ')}`;
         }
 
         query += ' ORDER BY id';
 
         const searchResults = await pool.query(query, params);
 
-        res.json(searchResults.rows.map(toProductResponse));
+        res.json(searchResults.rows.map((row) => toProductResponse(row, language)));
     } catch (err) {
         next(createError('SEARCH_FAILED', 500, 'Unable to perform search', err));
     }
