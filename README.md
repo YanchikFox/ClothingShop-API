@@ -105,6 +105,7 @@ Production deployments should provide secure values for these variables via the 
 - `npm install` – install dependencies
 - `node setup-database.js` – initialise or reset the database
 - `node server.js` – start the API server
+- `npm test` – run the Jest test suite against the API endpoints
 
 ## Useful tips
 
