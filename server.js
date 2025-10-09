@@ -5,6 +5,7 @@ const { Pool } = require('pg');
 const createProductsRouter = require('./routes/products');
 const createCartRouter = require('./routes/cart');
 const createAuthRouter = require('./routes/auth');
+const createRecommendationsRouter = require('./routes/recommendations');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -41,6 +42,7 @@ const pool = new Pool(poolConfig);
 app.use('/api', createProductsRouter(pool));
 app.use('/api', createAuthRouter(pool, { jwtSecret: JWT_SECRET }));
 app.use('/api', createCartRouter(pool));
+app.use('/api', createRecommendationsRouter(pool));
 
 app.use(errorHandler);
 
