@@ -1,13 +1,48 @@
-version: '3.8'
+version: "3.9"
+
 services:
   db:
-    image: postgres
-    restart: always
+    image: postgres:16-alpine
     environment:
       POSTGRES_USER: myuser
       POSTGRES_PASSWORD: mypassword
       POSTGRES_DB: mydatabase
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d mydatabase"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     ports:
-      - '5432:5432'
+      - "5432:5432"
     volumes:
-      - ./postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: ./api
+    environment:
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: myuser
+      DB_PASSWORD: mypassword
+      DB_NAME: mydatabase
+      JWT_SECRET: dev-secret-change-me
+      ML_URL: http://ml:8000
+    depends_on:
+      - db
+    ports:
+      - "3000:3000"
+
+  ml:
+    build:
+      context: ./api/ml_service
+    environment:
+      CATALOG_API_BASE_URL: http://api:3000
+    depends_on:
+      - api
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:
