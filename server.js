@@ -5,7 +5,7 @@ const { Pool } = require('pg');
 const createProductsRouter = require('./routes/products');
 const createCartRouter = require('./routes/cart');
 const createAuthRouter = require('./routes/auth');
-const createRecommendationsRouter = require('./routes/recommendations');
+const createRecsRouter = require('./routes/recs');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -20,6 +20,7 @@ const {
     DB_PASSWORD = 'mypassword',
     DB_NAME = 'mydatabase',
     JWT_SECRET = 'dev-secret-change-me',
+    ML_URL,
     DB_SSL = 'false',
 } = process.env;
 
@@ -42,7 +43,12 @@ const pool = new Pool(poolConfig);
 app.use('/api', createProductsRouter(pool));
 app.use('/api', createAuthRouter(pool, { jwtSecret: JWT_SECRET }));
 app.use('/api', createCartRouter(pool));
-app.use('/api', createRecommendationsRouter(pool));
+app.use(
+    '/api',
+    createRecsRouter(pool, {
+        mlUrl: ML_URL,
+    })
+);
 
 app.use(errorHandler);
 

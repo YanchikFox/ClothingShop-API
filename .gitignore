@@ -11,7 +11,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
-.env.example
+!.env.example
 .env
 # Logs
 logs
