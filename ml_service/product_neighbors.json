@@ -1,0 +1,32 @@
+{
+  "prod-001": [
+    {"product_id": "prod-002", "score": 0.92},
+    {"product_id": "prod-003", "score": 0.89},
+    {"product_id": "prod-004", "score": 0.87}
+  ],
+  "prod-002": [
+    {"product_id": "prod-001", "score": 0.92},
+    {"product_id": "prod-003", "score": 0.9},
+    {"product_id": "prod-005", "score": 0.85}
+  ],
+  "prod-003": [
+    {"product_id": "prod-001", "score": 0.89},
+    {"product_id": "prod-004", "score": 0.88},
+    {"product_id": "prod-002", "score": 0.9}
+  ],
+  "prod-004": [
+    {"product_id": "prod-003", "score": 0.88},
+    {"product_id": "prod-001", "score": 0.87},
+    {"product_id": "prod-005", "score": 0.86}
+  ],
+  "prod-005": [
+    {"product_id": "prod-002", "score": 0.85},
+    {"product_id": "prod-004", "score": 0.86},
+    {"product_id": "prod-006", "score": 0.83}
+  ],
+  "prod-006": [
+    {"product_id": "prod-005", "score": 0.83},
+    {"product_id": "prod-004", "score": 0.8},
+    {"product_id": "prod-003", "score": 0.78}
+  ]
+}
