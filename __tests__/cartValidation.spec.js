@@ -113,4 +113,4 @@ describe('Cart route validation', () => {
         });
         expect(pool.query).not.toHaveBeenCalled();
     });
-});
+});

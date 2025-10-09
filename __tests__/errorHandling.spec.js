@@ -73,4 +73,4 @@ describe('Centralized error handling', () => {
             },
         });
     });
-});
+});

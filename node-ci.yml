@@ -1,0 +1,77 @@
+name: Node CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: myuser
+          POSTGRES_PASSWORD: mypassword
+          POSTGRES_DB: mydatabase
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U myuser -d mydatabase"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USER: myuser
+      DB_PASSWORD: mypassword
+      DB_NAME: mydatabase
+      JWT_SECRET: test-secret
+      NODE_OPTIONS: --experimental-vm-modules
+      CI: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Wait for Postgres (TCP)
+        shell: bash
+        run: |
+          for i in {1..60}; do
+            (echo >/dev/tcp/localhost/5432) >/dev/null 2>&1 && echo "Postgres is up" && exit 0
+            echo "Waiting for Postgres..."
+            sleep 1
+          done
+          echo "Postgres did not become ready in time" >&2
+          exit 1
+
+      - name: Seed DB
+        run: node setup-database.js
+
+      - name: List Jest tests
+        run: npx jest --listTests || true
+
+      - name: Check DB connectivity
+        run: |
+          node -e "const {Client}=require('pg'); const c=new Client({
+            host: process.env.DB_HOST,
+            port: +process.env.DB_PORT,
+            user: process.env.DB_USER,
+            password: process.env.DB_PASSWORD,
+            database: process.env.DB_NAME,
+          }); c.connect().then(()=>{console.log('DB OK'); return c.end();}).catch(e=>{console.error(e); process.exit(1);});"
+
+      - name: Run tests
+        run: npx jest --runInBand --passWithNoTests --verbose

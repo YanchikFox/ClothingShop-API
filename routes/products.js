@@ -9,18 +9,93 @@ const createProductsRouter = (pool) => {
     router.get('/products', async (req, res, next) => {
         try {
             const language = resolveLanguage(req);
-            const { gender, categoryId } = sanitizeProductsQuery(req.query);
-            const filter = gender ?? categoryId;
+            const {
+                gender,
+                categoryId,
+                minPrice,
+                maxPrice,
+                sortKey,
+                sortOrder,
+                page,
+                limit,
+                errors,
+            } = sanitizeProductsQuery(req.query);
 
-            let query = 'SELECT * FROM products';
-            const queryParams = [];
-
-            if (filter) {
-                query += ' WHERE gender = $1';
-                queryParams.push(filter);
+            if (errors.length > 0) {
+                return next(
+                    createError(
+                        'INVALID_PRODUCTS_QUERY',
+                        400,
+                        'Invalid products query parameters',
+                        new Error(errors.join(','))
+                    )
+                );
             }
 
-            query += ' ORDER BY id';
+            const conditions = [];
+            const queryParams = [];
+
+            if (gender) {
+                queryParams.push(gender);
+                conditions.push(`gender = $${queryParams.length}`);
+            }
+
+            if (categoryId) {
+                queryParams.push(categoryId);
+                conditions.push(`category_id = $${queryParams.length}`);
+            }
+
+            if (minPrice !== null) {
+                queryParams.push(minPrice);
+                conditions.push(`price >= $${queryParams.length}`);
+            }
+
+            if (maxPrice !== null) {
+                queryParams.push(maxPrice);
+                conditions.push(`price <= $${queryParams.length}`);
+            }
+
+            let query = 'SELECT * FROM products';
+
+            if (conditions.length > 0) {
+                query += ` WHERE ${conditions.join(' AND ')}`;
+            }
+
+            const orderClause = (() => {
+                const direction = sortOrder === 'desc' ? 'DESC' : 'ASC';
+                switch (sortKey) {
+                    case 'price':
+                        return `price ${direction}`;
+                    case 'name':
+                        return `LOWER(name) ${direction}`;
+                    case 'created_at':
+                        return `created_at ${direction}`;
+                    case 'newest':
+                        return 'created_at DESC';
+                    case 'oldest':
+                        return 'created_at ASC';
+                    case 'bestseller':
+                        return 'is_bestseller DESC, id ASC';
+                    case 'id':
+                        return `id ${direction}`;
+                    default:
+                        return 'id ASC';
+                }
+            })();
+
+            query += ` ORDER BY ${orderClause}`;
+
+            if (limit !== null) {
+                queryParams.push(limit);
+                query += ` LIMIT $${queryParams.length}`;
+
+                const currentPage = page ?? 1;
+                const offset = Math.max(0, (currentPage - 1) * limit);
+                if (offset > 0) {
+                    queryParams.push(offset);
+                    query += ` OFFSET $${queryParams.length}`;
+                }
+            }
 
             const allProducts = await pool.query(query, queryParams);
             res.json(allProducts.rows.map((row) => toProductResponse(row, language)));
