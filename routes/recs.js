@@ -1,6 +1,12 @@
 const express = require('express');
 const { createError } = require('../errors');
 const { resolveLanguage, toProductResponse } = require('../utils/productResponse');
+const {
+    clampLimit,
+    DEFAULT_SIMILAR_LIMIT,
+    findProductsByIds,
+    findSimilarProducts,
+} = require('../repositories/productRepository');
 
 const DEFAULT_TIMEOUT_MS = 5000;
 
@@ -121,6 +127,9 @@ const createRecsRouter = (pool, { mlUrl, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) 
     const router = express.Router();
 
     const enrich = async (req, res, next, fetchOptions) => {
+        if (!mlUrl) {
+            return res.json([]);
+        }
         try {
             const rawResponse = await fetchRecommendations({
                 baseUrl: mlUrl,
@@ -134,13 +143,13 @@ const createRecsRouter = (pool, { mlUrl, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) 
             }
 
             const ids = Array.from(new Set(recommendations.map((item) => item.productId)));
-            const { rows } = await pool.query('SELECT * FROM products WHERE id = ANY($1)', [ids]);
+            const rows = await findProductsByIds(pool, ids);
             const productMap = new Map(rows.map((row) => [String(row.id), row]));
             const language = resolveLanguage(req);
 
             const items = recommendations
                 .map(({ productId, score }) => {
-                    const productRow = productMap.get(productId);
+                    const productRow = productMap.get(String(productId));
                     if (!productRow) {
                         return null;
                     }
@@ -158,11 +167,86 @@ const createRecsRouter = (pool, { mlUrl, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) 
     };
 
     router.get('/recs/similar', async (req, res, next) => {
-        await enrich(req, res, next, {
-            path: '/recs/similar',
-            method: 'GET',
-            query: req.query,
-        });
+        const language = resolveLanguage(req);
+        const rawProductId = req.query?.product_id ?? req.query?.productId;
+        const productId = typeof rawProductId === 'string' ? rawProductId.trim() : String(rawProductId ?? '').trim();
+        if (!productId) {
+            return next(
+                createError('INVALID_PRODUCT_ID', 400, 'product_id query parameter is required', null)
+            );
+        }
+
+        const limit = clampLimit(req.query?.limit, DEFAULT_SIMILAR_LIMIT);
+
+        const respondWithFallback = async () => {
+            const rows = await findSimilarProducts(pool, { productId, limit });
+            return rows.map((row) => ({
+                product: toProductResponse(row, language),
+                score: null,
+            }));
+        };
+
+        if (!mlUrl) {
+            try {
+                const items = await respondWithFallback();
+                return res.json(items);
+            } catch (error) {
+                return next(createError('SIMILAR_PRODUCTS_FAILED', 500, 'Unable to fetch similar products', error));
+            }
+        }
+
+        try {
+            const rawResponse = await fetchRecommendations({
+                baseUrl: mlUrl,
+                timeout: timeoutMs,
+                path: '/recs/similar',
+                method: 'GET',
+                query: req.query,
+            });
+
+            const recommendations = normaliseRecommendations(rawResponse);
+            if (recommendations.length === 0) {
+                const items = await respondWithFallback();
+                return res.json(items);
+            }
+
+            const ids = Array.from(new Set(recommendations.map((item) => item.productId)));
+            const rows = await findProductsByIds(pool, ids);
+            const productMap = new Map(rows.map((row) => [String(row.id), row]));
+
+            const items = recommendations
+                .map(({ productId: recommendationId, score }) => {
+                    const productRow = productMap.get(String(recommendationId));
+                    if (!productRow) {
+                        return null;
+                    }
+                    return {
+                        product: toProductResponse(productRow, language),
+                        score,
+                    };
+                })
+                .filter(Boolean);
+
+            if (items.length === 0) {
+                const fallbackItems = await respondWithFallback();
+                return res.json(fallbackItems);
+            }
+
+            return res.json(items);
+        } catch (error) {
+            if (process.env.NODE_ENV !== 'test') {
+                console.warn('ML similar recommendations failed, falling back to DB query', error);
+            }
+
+            try {
+                const fallbackItems = await respondWithFallback();
+                return res.json(fallbackItems);
+            } catch (fallbackError) {
+                return next(
+                    createError('SIMILAR_PRODUCTS_FAILED', 500, 'Unable to fetch similar products', fallbackError)
+                );
+            }
+        }
     });
 
     router.post('/recs/personal', async (req, res, next) => {

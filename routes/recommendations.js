@@ -1,6 +1,7 @@
 const express = require('express');
 const { createError } = require('../errors');
 const { resolveLanguage, toProductResponse } = require('../utils/productResponse');
+const { clampLimit, findAllProducts } = require('../repositories/productRepository');
 
 const DEFAULT_LIMIT = 10;
 
@@ -147,13 +148,7 @@ const sanitisePriceRange = (value) => {
     return [minValue, maxValue];
 };
 
-const parseLimit = (value) => {
-    const numeric = Number.parseInt(value, 10);
-    if (!Number.isFinite(numeric) || numeric <= 0) {
-        return DEFAULT_LIMIT;
-    }
-    return Math.min(numeric, 50);
-};
+const parseLimit = (value) => clampLimit(value, DEFAULT_LIMIT, 50);
 
 const createRecommendationsRouter = (pool) => {
     const router = express.Router();
@@ -181,7 +176,7 @@ const createRecommendationsRouter = (pool) => {
                 }
             }
 
-            const { rows } = await pool.query('SELECT * FROM products');
+            const rows = await findAllProducts(pool);
             if (!rows || rows.length === 0) {
                 return res.json({ items: [] });
             }

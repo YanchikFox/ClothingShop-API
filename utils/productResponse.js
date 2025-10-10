@@ -1,5 +1,18 @@
-const SUPPORTED_LANGUAGES = ['en', 'ru', 'uk'];
 const DEFAULT_LANGUAGE = 'en';
+
+const parseSupportedLanguages = (raw) => {
+    if (!raw || typeof raw !== 'string') {
+        return null;
+    }
+    const languages = raw
+        .split(',')
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+    return languages.length > 0 ? Array.from(new Set(languages)) : null;
+};
+
+const SUPPORTED_LANGUAGES =
+    parseSupportedLanguages(process.env.SUPPORTED_LANGUAGES) ?? ['en', 'ru', 'uk', 'pl'];
 
 const normalizeLanguageTag = (tag) => {
     if (!tag || typeof tag !== 'string') {
