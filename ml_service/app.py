@@ -8,8 +8,8 @@ from typing import Dict, List
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 
-from .catalog_loader import CatalogLoaderError, load_catalog
-from .models import CatalogResponse, ServiceSettings
+from catalog_loader import CatalogLoaderError, load_catalog
+from models import CatalogResponse, ServiceSettings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

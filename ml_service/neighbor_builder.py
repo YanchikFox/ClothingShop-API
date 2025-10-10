@@ -24,8 +24,8 @@ from scipy import sparse
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import OneHotEncoder, normalize
 
-from .catalog_loader import CatalogLoaderError, load_catalog
-from .models import Product, ServiceSettings
+from catalog_loader import CatalogLoaderError, load_catalog
+from models import Product, ServiceSettings
 
 logger = logging.getLogger(__name__)
 

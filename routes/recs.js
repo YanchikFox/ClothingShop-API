@@ -84,7 +84,20 @@ const fetchRecommendations = async ({
             );
         }
 
-        return response.json();
+        if (response.status === 204) {
+            return [];
+        }
+
+        const rawBody = await response.text();
+        if (!rawBody) {
+            return [];
+        }
+
+        try {
+            return JSON.parse(rawBody);
+        } catch (parseError) {
+            throw createError('ML_RESPONSE_INVALID', 502, 'ML service returned invalid JSON', parseError);
+        }
     } catch (error) {
         if (error?.name === 'AbortError') {
             throw createError('ML_REQUEST_TIMEOUT', 504, 'ML service request timed out', error);

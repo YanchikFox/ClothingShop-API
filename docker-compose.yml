@@ -1,48 +1,48 @@
-version: "3.9"
-
 services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypassword
-      POSTGRES_DB: mydatabase
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U myuser -d mydatabase"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${DB_USER:-myuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mypassword}
+      POSTGRES_DB: ${DB_NAME:-mydatabase}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-myuser} -d ${DB_NAME:-mydatabase}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   api:
     build:
-      context: ./api
+      context: .
+      dockerfile: Dockerfile
     environment:
-      PORT: 3000
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_USER: myuser
-      DB_PASSWORD: mypassword
-      DB_NAME: mydatabase
-      JWT_SECRET: dev-secret-change-me
-      ML_URL: http://ml:8000
+      PORT: ${PORT:-3000}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-myuser}
+      DB_PASSWORD: ${DB_PASSWORD:-mypassword}
+      DB_NAME: ${DB_NAME:-mydatabase}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      ML_URL: ${ML_URL:-http://ml:8000}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "3000:3000"
 
   ml:
     build:
-      context: ./api/ml_service
+      context: ./ml_service
+      dockerfile: Dockerfile
     environment:
       CATALOG_API_BASE_URL: http://api:3000
     depends_on:
       - api
     ports:
       - "8000:8000"
+
 
 volumes:
   postgres_data:

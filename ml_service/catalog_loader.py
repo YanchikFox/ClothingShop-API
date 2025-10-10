@@ -6,7 +6,7 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 import requests
 from requests import Session
 
-from .models import Catalog, Product, ServiceSettings, build_catalog, parse_product
+from models import Catalog, Product, ServiceSettings, build_catalog, parse_product
 
 logger = logging.getLogger(__name__)
 

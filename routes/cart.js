@@ -122,7 +122,16 @@ const createCartRouter = (pool) => {
             }
             const cartId = cart.rows[0].id;
 
-            await pool.query('DELETE FROM cart_items WHERE cart_id = $1 AND product_id = $2', [cartId, productId]);
+            const result = await pool.query('DELETE FROM cart_items WHERE cart_id = $1 AND product_id = $2', [cartId, productId]);
+
+            if (result.rowCount === 0) {
+                return res.status(404).json({
+                    error: {
+                        code: 'CART_PRODUCT_NOT_FOUND',
+                        message: 'Product not found in cart',
+                    },
+                });
+            }
 
             res.json({ message: 'Product removed from cart' });
         } catch (err) {

@@ -158,7 +158,7 @@ const toProductResponse = (row, language) => {
     return {
         id: row.id,
         article: row.article,
-        category_id: row.category_id ?? row.gender ?? null,
+        category_id: row.category_id ?? null,
         name: getLocalizedText(row.name, nameTranslations, language),
         description: getLocalizedText(row.description ?? '', descriptionTranslations, language),
         price: parsePriceValue(row),
@@ -174,7 +174,7 @@ const toProductResponse = (row, language) => {
         ),
         features: buildLocalizedFeatures(row, language),
         reviews: parseJsonField(row.reviews),
-        gender: row.gender ?? row.category_id ?? null,
+        gender: row.gender ?? null,
     };
 };
 
