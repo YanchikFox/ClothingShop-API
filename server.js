@@ -6,7 +6,8 @@ const createProductsRouter = require('./routes/products');
 const createCartRouter = require('./routes/cart');
 const createAuthRouter = require('./routes/auth');
 const createRecommendationsRouter = require('./routes/recommendations');
-const createRecsRouter = require('./routes/recs');
+const { createRecsRouter } = require('./routes/recs');
+const createRatingsRouter = require('./routes/ratingsRoutes');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -48,6 +49,12 @@ app.use('/api', createRecommendationsRouter(pool));
 app.use(
     '/api',
     createRecsRouter(pool, {
+        mlUrl: ML_URL,
+    })
+);
+app.use(
+    '/api',
+    createRatingsRouter(pool, {
         mlUrl: ML_URL,
     })
 );

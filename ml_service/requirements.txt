@@ -5,4 +5,6 @@ requests
 numpy
 pandas
 scikit-learn
+scikit-surprise
 pydantic-settings
+psycopg2-binary

@@ -14,9 +14,9 @@ from models import CatalogResponse, ServiceSettings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-NEIGHBORS_PATH = Path(__file__).with_name("product_neighbors.json")
-
 app = FastAPI(title="ML Service", version="1.0.0")
+
+_recommendations_cache: Dict[str, object] = {"mtime": None, "data": {}}
 
 
 @lru_cache
@@ -26,15 +26,17 @@ def get_settings() -> ServiceSettings:
 
 @lru_cache
 def get_neighbors_map() -> Dict[str, List[Dict[str, float]]]:
-    if not NEIGHBORS_PATH.exists():
-        logger.warning("Neighbour file %s not found; returning empty mapping", NEIGHBORS_PATH)
+    settings = get_settings()
+    path = Path(settings.fallback_neighbors_path)
+    if not path.exists():
+        logger.warning("Neighbour file %s not found; returning empty mapping", path)
         return {}
 
     try:
-        with NEIGHBORS_PATH.open("r", encoding="utf-8") as fp:
+        with path.open("r", encoding="utf-8") as fp:
             payload = json.load(fp)
     except (OSError, json.JSONDecodeError) as exc:
-        logger.error("Failed to load neighbours from %s: %s", NEIGHBORS_PATH, exc)
+        logger.error("Failed to load neighbours from %s: %s", path, exc)
         return {}
 
     neighbours: Dict[str, List[Dict[str, float]]] = {}
@@ -58,6 +60,73 @@ def get_neighbors_map() -> Dict[str, List[Dict[str, float]]]:
 
     logger.info("Loaded neighbours for %s products", len(neighbours))
     return neighbours
+
+
+def _load_recommendations() -> Dict[str, List[Dict[str, float]]]:
+    settings = get_settings()
+    path = Path(settings.recommendations_output_path)
+
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return {}
+
+    cache_mtime = _recommendations_cache.get("mtime")
+    if cache_mtime == mtime:
+        cached = _recommendations_cache.get("data")
+        if isinstance(cached, dict):
+            return cached  # type: ignore[return-value]
+
+    try:
+        with path.open("r", encoding="utf-8") as fp:
+            payload = json.load(fp)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.error("Failed to load personalized recommendations: %s", exc)
+        return {}
+
+    users_obj = payload.get("users") if isinstance(payload, dict) else None
+    recommendations: Dict[str, List[Dict[str, float]]] = {}
+    if isinstance(users_obj, dict):
+        for key, value in users_obj.items():
+            if not isinstance(value, list):
+                continue
+            cleaned: List[Dict[str, float]] = []
+            for item in value:
+                if not isinstance(item, dict):
+                    continue
+                product_id = item.get("product_id") or item.get("productId")
+                score = item.get("score")
+                if product_id is None or score is None:
+                    continue
+                try:
+                    cleaned.append({"product_id": str(product_id), "score": float(score)})
+                except (TypeError, ValueError):
+                    continue
+            if cleaned:
+                recommendations[str(key)] = cleaned
+
+    _recommendations_cache["mtime"] = mtime
+    _recommendations_cache["data"] = recommendations
+    logger.info("Loaded personalized recommendations for %s users", len(recommendations))
+    return recommendations
+
+
+def _build_fallback(neighbours: Dict[str, List[Dict[str, float]]], limit: int) -> List[Dict[str, float]]:
+    scores: Dict[str, float] = {}
+    for items in neighbours.values():
+        for item in items:
+            product_id = str(item.get("product_id"))
+            if not product_id:
+                continue
+            try:
+                score = float(item.get("score", 0.0))
+            except (TypeError, ValueError):
+                score = 0.0
+            if product_id not in scores or score > scores[product_id]:
+                scores[product_id] = score
+
+    ranked = sorted(scores.items(), key=lambda entry: entry[1], reverse=True)
+    return [{"product_id": product_id, "score": score} for product_id, score in ranked[:limit]]
 
 
 @app.get("/health")
@@ -100,3 +169,25 @@ async def similar_recommendations(
         return []
 
     return candidates[:limit]
+
+
+@app.get("/recs/personalized")
+async def personalized_recommendations(
+    user_id: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1),
+    neighbours: Dict[str, List[Dict[str, float]]] = Depends(get_neighbors_map),
+) -> List[Dict[str, float]]:
+    """Return personalized recommendations for a specific user."""
+
+    if not user_id:
+        return []
+
+    recommendations = _load_recommendations()
+    items = recommendations.get(str(user_id))
+    if items:
+        return items[:limit]
+
+    fallback = _build_fallback(neighbours, limit)
+    if fallback:
+        logger.info("Fallback recommendations returned for user %s", user_id)
+    return fallback

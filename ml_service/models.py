@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -48,6 +49,36 @@ class ServiceSettings(BaseSettings):
         default=100,
         env="CATALOG_PAGE_SIZE",
         description="Number of items fetched per page when pagination is required.",
+    )
+    database_url: Optional[str] = Field(
+        default=None,
+        env="DATABASE_URL",
+        description="PostgreSQL connection string used for loading ratings.",
+    )
+    ratings_api_base_url: Optional[str] = Field(
+        default=None,
+        env="RATINGS_API_BASE_URL",
+        description="Optional HTTP endpoint that exposes ratings for training.",
+    )
+    ratings_api_token: Optional[str] = Field(
+        default=None,
+        env="RATINGS_API_TOKEN",
+        description="Shared secret used when accessing the ratings export endpoint.",
+    )
+    ratings_request_timeout: float = Field(
+        default=10.0,
+        env="RATINGS_REQUEST_TIMEOUT",
+        description="Timeout (in seconds) used for ratings HTTP requests.",
+    )
+    recommendations_output_path: str = Field(
+        default_factory=lambda: str(Path(__file__).with_name("user_recommendations.json")),
+        env="RECOMMENDATIONS_OUTPUT_PATH",
+        description="Path to the JSON file containing cached personalized recommendations.",
+    )
+    fallback_neighbors_path: str = Field(
+        default_factory=lambda: str(Path(__file__).with_name("product_neighbors.json")),
+        env="NEIGHBORS_PATH",
+        description="Path to the JSON file with content-based neighbours used as fallback.",
     )
 
     class Config:

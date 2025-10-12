@@ -1,6 +1,11 @@
 const DEFAULT_LIMIT = 10;
 
-const executeQuery = async (pool, query, params = []) => {
+const executeQuery = async (pool, query, params) => {
+    if (params === undefined) {
+        const { rows } = await pool.query(query);
+        return rows;
+    }
+
     const { rows } = await pool.query(query, params);
     return rows;
 };

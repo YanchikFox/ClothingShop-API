@@ -31,6 +31,7 @@ if (DB_SSL === 'true') {
 const pool = new Pool(poolConfig);
 
 const setupQuery = `
+    DROP TABLE IF EXISTS ratings;
     DROP TABLE IF EXISTS cart_items;
     DROP TABLE IF EXISTS carts;
     DROP TABLE IF EXISTS orders;
@@ -83,6 +84,16 @@ const setupQuery = `
         composition_translations JSONB NOT NULL DEFAULT '{}'::jsonb,
         care_instructions_translations JSONB NOT NULL DEFAULT '{}'::jsonb,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE ratings (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        product_id VARCHAR(50) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        rating SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (user_id, product_id)
     );
 
     CREATE TABLE carts (

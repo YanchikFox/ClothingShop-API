@@ -261,4 +261,8 @@ const createRecsRouter = (pool, { mlUrl, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) 
     return router;
 };
 
-module.exports = createRecsRouter;
+module.exports = {
+    createRecsRouter,
+    fetchRecommendations,
+    normaliseRecommendations,
+};
